@@ -9,6 +9,8 @@
 // @grant        none
 // ==/UserScript==
 
+const rentCategoryId = "15";
+
 function patchPrice(rentlessPrice, rent) {
   return rent == null
     ? "poszukaj w opisie Xddd"
@@ -28,7 +30,7 @@ function interceptPwaLazyOffers() {
       resp.ok &&
       parsedUrl.host === "www.olx.pl" &&
       parsedUrl.pathname === "/api/v1/offers/" &&
-      parsedUrl.searchParams.get("category_id") === "15"
+      parsedUrl.searchParams.get("category_id") === rentCategoryId
     ) {
       const body = await resp.json();
       const modifiedBody = {

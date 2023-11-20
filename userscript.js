@@ -23,7 +23,13 @@ function interceptPwaLazyOffers() {
   let orgFetch = window.fetch;
   window.fetch = async (url, ...rest) => {
     const resp = await orgFetch(url, ...rest);
-    if (resp.ok && url.startsWith("https://www.olx.pl/api/v1/offers/?")) {
+    const parsedUrl = new URL(url);
+    if (
+      resp.ok &&
+      parsedUrl.host === "www.olx.pl" &&
+      parsedUrl.pathname === "/api/v1/offers/" &&
+      parsedUrl.searchParams.get("category_id") === "15"
+    ) {
       const body = await resp.json();
       const modifiedBody = {
         ...body,
@@ -66,17 +72,30 @@ function patchPrerenderedState() {
     return;
   }
   const prerenderedState = JSON.parse(window.__PRERENDERED_STATE__);
+  if (
+    !prerenderedState.listing.breadcrumbs.some(
+      (breadcrumb) => breadcrumb.label === "Wynajem"
+    )
+  ) {
+    return;
+  }
   prerenderedState.listing.listing.ads =
     prerenderedState.listing.listing.ads.map((offer) => {
-      const rentlessPrice = offer.price.regularPrice.value;
-      return ({
+      const rentlessPrice = offer.price.regularPrice?.value;
+      if (rentlessPrice == null) {
+        return offer;
+      }
+      return {
         ...offer,
         title: patchTitle(offer.title, rentlessPrice),
         price: {
           ...offer.price,
-          displayValue: patchPrice(rentlessPrice, offer.params.find(param => param.key === "rent")?.normalizedValue),
+          displayValue: patchPrice(
+            rentlessPrice,
+            offer.params.find((param) => param.key === "rent")?.normalizedValue
+          ),
         },
-      });
+      };
     });
   window.__PRERENDERED_STATE__ = JSON.stringify(prerenderedState);
 }

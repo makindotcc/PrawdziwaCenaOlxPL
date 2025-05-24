@@ -23,50 +23,68 @@ function patchTitle(title, rentlessPrice) {
 
 function interceptPwaLazyOffers() {
   let orgFetch = window.fetch;
-  window.fetch = async (url, ...rest) => {
-    const resp = await orgFetch(url, ...rest);
+  window.fetch = async (url, options, ...rest) => {
+    const resp = await orgFetch(url, options, ...rest);
+    return interceptFetchResponse(url, options, resp);
+  };
+}
+
+async function interceptFetchResponse(url, options, resp) {
+  try {
     const parsedUrl = new URL(url);
     if (
       resp.ok &&
       parsedUrl.host === "www.olx.pl" &&
-      parsedUrl.pathname === "/api/v1/offers/" &&
-      parsedUrl.searchParams.get("category_id") === rentCategoryId
+      parsedUrl.pathname === "/apigateway/graphql" &&
+      options?.body != null
     ) {
-      const body = await resp.json();
-      const modifiedBody = {
-        ...body,
-        data: body?.data?.map((offer) => ({
-          ...offer,
-          title: patchTitle(
-            offer.title,
-            offer.params.find((param) => param.key === "price").value.value
-          ),
-          params: offer.params.map((param) => {
-            if (param.key === "price") {
-              const rentlessPrice = param.value.value;
-              const rent = offer.params.find((param) => param.key === "rent")
-                ?.value?.key;
-              return {
-                ...param,
-                value: {
-                  ...param.value,
-                  label: patchPrice(rentlessPrice, rent),
-                },
-              };
-            } else {
-              return param;
-            }
-          }),
-        })),
-      };
-      return new Response(JSON.stringify(modifiedBody), {
-        status: resp.status,
-        statusText: resp.statusText,
-        headers: resp.headers,
-      });
+      const postBody = JSON.parse(options.body);
+      if (
+        postBody.query?.startsWith("query ListingSearchQuery") &&
+        postBody.variables?.searchParameters?.some(
+          (param) =>
+            param.key === "category_id" && param.value === rentCategoryId
+        )
+      ) {
+        return await patchListingResponse(resp);
+      }
     }
-    return resp;
-  };
+  } catch (ex) {
+    // original console object machen without tracking
+    window.console.error("patch gql response error:", ex);
+  }
+  return resp;
+}
+
+async function patchListingResponse(resp) {
+  const body = await resp.json();
+  body.data.clientCompatibleListings.data =
+    body.data.clientCompatibleListings.data.map(patchOffer);
+  return new Response(JSON.stringify(body), {
+    status: resp.status,
+    statusText: resp.statusText,
+    headers: resp.headers,
+  });
+}
+
+function patchOffer(offer) {
+  offer.params = offer.params.map((param) => {
+    if (param.key === "price") {
+      const rentlessPrice = param.value.value;
+      const rent = offer.params.find((param) => param.key === "rent")?.value
+        ?.key;
+      return {
+        ...param,
+        value: {
+          ...param.value,
+          label: patchPrice(rentlessPrice, rent),
+        },
+      };
+    } else {
+      return param;
+    }
+  });
+  return offer;
 }
 
 function patchPrerenderedState() {

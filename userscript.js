@@ -12,7 +12,7 @@
 // original console object machen (without tracking)
 const console = window.console;
 
-const rentCategoryId = "15";
+const rentCategoryId = 15;
 
 function patchTitle(title, rentlessPrice) {
   return `${title} - ❌ ${rentlessPrice} zł`;
@@ -59,7 +59,7 @@ async function patchListingResponse(resp) {
 
 function patchOffer(offer) {
   try {
-    if (offer.category?.id === 15) {
+    if (offer.category?.id === rentCategoryId) {
       const priceParam = offer.params.find((param) => param.key === "price");
       const price = priceParam?.value?.value;
       if (price !== undefined) {

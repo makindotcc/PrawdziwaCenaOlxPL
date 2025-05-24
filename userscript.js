@@ -9,16 +9,13 @@
 // @grant        none
 // ==/UserScript==
 
+// original console object machen (without tracking)
+const console = window.console;
+
 const rentCategoryId = "15";
 
-function patchPrice(rentlessPrice, rent) {
-  return rent == null
-    ? "poszukaj w opisie Xddd"
-    : `✅ ${Math.ceil(rentlessPrice + parseFloat(rent))} zł`;
-}
-
 function patchTitle(title, rentlessPrice) {
-  return `${title} - ${rentlessPrice} zł`;
+  return `${title} - ❌ ${rentlessPrice} zł`;
 }
 
 function interceptPwaLazyOffers() {
@@ -39,19 +36,12 @@ async function interceptFetchResponse(url, options, resp) {
       options?.body != null
     ) {
       const postBody = JSON.parse(options.body);
-      if (
-        postBody.query?.startsWith("query ListingSearchQuery") &&
-        postBody.variables?.searchParameters?.some(
-          (param) =>
-            param.key === "category_id" && param.value === rentCategoryId
-        )
-      ) {
+      if (postBody.query?.startsWith("query ListingSearchQuery")) {
         return await patchListingResponse(resp);
       }
     }
   } catch (ex) {
-    // original console object machen without tracking
-    window.console.error("patch gql response error:", ex);
+    console.error("patch gql response error:", ex);
   }
   return resp;
 }
@@ -68,23 +58,38 @@ async function patchListingResponse(resp) {
 }
 
 function patchOffer(offer) {
-  offer.params = offer.params.map((param) => {
-    if (param.key === "price") {
-      const rentlessPrice = param.value.value;
-      const rent = offer.params.find((param) => param.key === "rent")?.value
-        ?.key;
-      return {
-        ...param,
-        value: {
-          ...param.value,
-          label: patchPrice(rentlessPrice, rent),
-        },
-      };
-    } else {
-      return param;
+  try {
+    if (offer.category?.id === 15) {
+      const priceParam = offer.params.find((param) => param.key === "price");
+      const price = priceParam?.value?.value;
+      if (price !== undefined) {
+        const mods = getRentOfferModifications({
+          title: offer.title,
+          price,
+          rent: offer.params.find((param) => param.key === "rent")?.value?.key,
+        });
+        offer.title = mods.title ?? offer.title;
+        priceParam.value.label = mods.priceLabel;
+      }
     }
-  });
+  } catch (ex) {
+    console.error("patch offer error:", ex);
+  }
   return offer;
+}
+
+function getRentOfferModifications({ title, price, rent }) {
+  if (rent == null) {
+    return {
+      priceLabel: `❓ ${Math.ceil(price)} zł`,
+    };
+  } else {
+    const fullPrice = price + parseFloat(rent);
+    return {
+      priceLabel: `✅ ${Math.ceil(fullPrice)} zł`,
+      title: patchTitle(title, price),
+    };
+  }
 }
 
 function patchPrerenderedState() {
@@ -101,21 +106,18 @@ function patchPrerenderedState() {
   }
   prerenderedState.listing.listing.ads =
     prerenderedState.listing.listing.ads.map((offer) => {
-      const rentlessPrice = offer.price.regularPrice?.value;
-      if (rentlessPrice == null) {
-        return offer;
+      const price = offer.price.regularPrice?.value;
+      if (price != null) {
+        const mods = getRentOfferModifications({
+          title: offer.title,
+          price,
+          rent: offer.params.find((param) => param.key === "rent")
+            ?.normalizedValue,
+        });
+        offer.price.displayValue = mods.priceLabel;
+        offer.title = mods.title ?? offer.title;
       }
-      return {
-        ...offer,
-        title: patchTitle(offer.title, rentlessPrice),
-        price: {
-          ...offer.price,
-          displayValue: patchPrice(
-            rentlessPrice,
-            offer.params.find((param) => param.key === "rent")?.normalizedValue
-          ),
-        },
-      };
+      return offer;
     });
   window.__PRERENDERED_STATE__ = JSON.stringify(prerenderedState);
 }

@@ -97,13 +97,6 @@ function patchPrerenderedState() {
     return;
   }
   const prerenderedState = JSON.parse(window.__PRERENDERED_STATE__);
-  if (
-    !prerenderedState.listing.breadcrumbs.some(
-      (breadcrumb) => breadcrumb.label === "Wynajem"
-    )
-  ) {
-    return;
-  }
   prerenderedState.listing.listing.ads =
     prerenderedState.listing.listing.ads.map((offer) => {
       const price = offer.price.regularPrice?.value;
@@ -122,5 +115,5 @@ function patchPrerenderedState() {
   window.__PRERENDERED_STATE__ = JSON.stringify(prerenderedState);
 }
 
-patchPrerenderedState();
 interceptPwaLazyOffers();
+patchPrerenderedState();

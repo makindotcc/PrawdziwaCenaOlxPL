@@ -47,8 +47,10 @@ async function interceptFetchResponse(url, options, resp) {
 }
 
 function getPriceRange() {
-  const fromInput = document.querySelector('input[data-testid="range-from-input"]');
-  const toInput = document.querySelector('input[data-testid="range-to-input"]');
+  const priceSection = Array.from(document.querySelectorAll('div'))
+    .find(div => div.textContent && div.textContent.trim().startsWith('Cena'));
+  const fromInput = priceSection.querySelector('input[data-testid="range-from-input"]');
+  const toInput = priceSection.querySelector('input[data-testid="range-to-input"]');
   const from = fromInput ? parseInt(fromInput.value, 10) : null;
   const to = toInput ? parseInt(toInput.value, 10) : null;
   return { from, to };

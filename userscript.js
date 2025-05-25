@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         olx true m2 price
 // @namespace    http://tampermonkey.net/
-// @version      0.1
+// @version      0.2
 // @description  jak chce mieszkanie za 3000 zl to raczej nie chce mieszkania za 3000 zl + milion zl czynszu jak cos (taka ciekawostka)
 // @author       makin
 // @match        https://www.olx.pl/*
@@ -46,10 +46,34 @@ async function interceptFetchResponse(url, options, resp) {
   return resp;
 }
 
+function getPriceRange() {
+  const fromInput = document.querySelector('input[data-testid="range-from-input"]');
+  const toInput = document.querySelector('input[data-testid="range-to-input"]');
+  const from = fromInput ? parseInt(fromInput.value, 10) : null;
+  const to = toInput ? parseInt(toInput.value, 10) : null;
+  return { from, to };
+}
+
+function isPriceInRange(price, from, to) {
+  if (from != null && price < from) return false;
+  if (to != null && price > to) return false;
+  return true;
+}
+
 async function patchListingResponse(resp) {
   const body = await resp.json();
   body.data.clientCompatibleListings.data =
-    body.data.clientCompatibleListings.data.map(patchOffer);
+    body.data.clientCompatibleListings.data.map(patchOffer)
+      .filter((offer) => {
+        const priceParam = offer.params.find((param) => param.key === "price");
+        let price = priceParam?.value?.value;
+        if (offer.category?.id === rentCategoryId) {
+          const rent = offer.params.find((param) => param.key === "rent")?.value?.key;
+          if (rent != null) price = price + parseFloat(rent);
+        }
+        const { from, to } = getPriceRange();
+        return price !== undefined && isPriceInRange(price, from, to);
+      });
   return new Response(JSON.stringify(body), {
     status: resp.status,
     statusText: resp.statusText,
@@ -97,21 +121,29 @@ function patchPrerenderedState() {
     return;
   }
   const prerenderedState = JSON.parse(window.__PRERENDERED_STATE__);
+  const { from, to } = getPriceRange();
   prerenderedState.listing.listing.ads =
-    prerenderedState.listing.listing.ads.map((offer) => {
-      const price = offer.price.regularPrice?.value;
-      if (price != null) {
-        const mods = getRentOfferModifications({
-          title: offer.title,
-          price,
-          rent: offer.params.find((param) => param.key === "rent")
-            ?.normalizedValue,
-        });
-        offer.price.displayValue = mods.priceLabel;
-        offer.title = mods.title ?? offer.title;
-      }
-      return offer;
-    });
+    prerenderedState.listing.listing.ads
+      .map((offer) => {
+        const price = offer.price.regularPrice?.value;
+        if (price != null) {
+          const mods = getRentOfferModifications({
+            title: offer.title,
+            price,
+            rent: offer.params.find((param) => param.key === "rent")
+              ?.normalizedValue,
+          });
+          offer.price.displayValue = mods.priceLabel;
+          offer.title = mods.title ?? offer.title;
+        }
+        return offer;
+      })
+      .filter((offer) => {
+        let price = offer.price.regularPrice?.value;
+        const rent = offer.params.find((param) => param.key === "rent")?.normalizedValue;
+        if (rent != null) price = price + parseFloat(rent);
+        return price != null && isPriceInRange(price, from, to);
+      });
   window.__PRERENDERED_STATE__ = JSON.stringify(prerenderedState);
 }
 
